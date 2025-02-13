@@ -1,11 +1,11 @@
-#include "server.h"
+#include "server/server.h"
 #include <sys/socket.h>
 
 int main() {
   // CREATES A SERVER INSTANCE HAS A FUNCTION CALLED SERVER CONSTRUCOR WHICH
   // RETURNS A STRUCT TYPE INSTANCE CALLED Server
   struct Server server = server_Constructor(
-      AF_INET,     // Address family: Ipv4
+      AF_INET,     // Address family: Ipv4 (domain)
       8080,        // poer number : 8080
       SOCK_STREAM, // socket type: Stream socket(TCP)
       0,           // Protocol : Default

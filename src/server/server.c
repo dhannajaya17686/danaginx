@@ -64,7 +64,7 @@ void launch(struct Server *server) {
     // Accept a new client connection.
     int new_socket = accept(server->socket, (struct sockaddr *)&server->address,
                             (socklen_t *)&addrlen);
-
+    // TODO: make a parser to parse incoming requests and make proper responses
     // Read the incoming request into the buffer.
     ssize_t bytesRead = read(new_socket, buffer, BUFFER_SIZE - 1);
 
@@ -90,6 +90,7 @@ void launch(struct Server *server) {
 
     // Send the response back to the client.
     write(new_socket, response, strlen(response));
+    // TODO: making a system where the response is injected based on the request
 
     // Close the client connection.
     close(new_socket);
