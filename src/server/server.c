@@ -1,4 +1,5 @@
 #include "server.h" // Include the custom header file that defines the Server structure.
+#include "../request/request.h"
 #include <stdio.h>  // Include standard input/output functions.
 #include <stdlib.h> // Include standard library functions such as exit().
 #include <string.h> // Include string handling functions.
@@ -67,27 +68,31 @@ void launch(struct Server *server) {
     // TODO: make a parser to parse incoming requests and make proper responses
     // Read the incoming request into the buffer.
     ssize_t bytesRead = read(new_socket, buffer, BUFFER_SIZE - 1);
-
+    struct HttpRequest request;
     if (bytesRead >= 0) {
       buffer[bytesRead] = '\0'; // Null-terminate the received string.
-      puts(buffer);             // Print the received HTTP request.
+      request = parse_request(buffer);
+      printf("Method: %s\n", request.method);
+      printf("Path: %s\n", request.path);
+      printf("Headers:\n%s\n", request.headers);
+
     } else {
       perror("Error reading buffer...\n"); // Print error if reading fails.
     }
 
     // Define a basic HTTP response with an HTML message.
-    char *response = "HTTP/1.1 200 OK\r\n"
-                     "Content-Type: text/html; charset=UTF-8\r\n\r\n"
-                     "<!DOCTYPE html>\r\n"
-                     "<html>\r\n"
-                     "<head>\r\n"
-                     "<title>Testing Basic HTTP-SERVER</title>\r\n"
-                     "</head>\r\n"
-                     "<body>\r\n"
-                     "Hello, Ahmed!\r\n"
-                     "</body>\r\n"
-                     "</html>\r\n";
-
+    char *response;
+    if (strcmp(request.path, "/") == 0) {
+      response = "HTTP/1.1 200 OK\r\n"
+                 "Content-Type: text/html; charset=UTF-8\r\n\r\n"
+                 "<h1>Welcome to the Home Page</h1>";
+    } else if (strcmp(request.path, "/about") == 0) {
+      response = "HTTP/1.1 200 OK\r\n"
+                 "Content-Type: text/html; charset=UTF-8\r\n\r\n"
+                 "<h1>About Page</h1>";
+    } else {
+      response = "HTTP/1.1 404 Not Found\r\n";
+    }
     // Send the response back to the client.
     write(new_socket, response, strlen(response));
     // TODO: making a system where the response is injected based on the request
