@@ -14,5 +14,6 @@ int main() {
       launch       // function pointer to the server launch functionality
   );
   server.launch(&server); // calling the launch function to start the server
+                          // Initialize routes
   return 0;
 }

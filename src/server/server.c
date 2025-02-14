@@ -1,103 +1,196 @@
-#include "server.h" // Include the custom header file that defines the Server structure.
+#include "server.h"
 #include "../request/request.h"
-#include <stdio.h>  // Include standard input/output functions.
-#include <stdlib.h> // Include standard library functions such as exit().
-#include <string.h> // Include string handling functions.
-#include <unistd.h> // Include POSIX API for system calls like read() and write().
+#include "../response/response.h"
+#include "../routes/routes.h"
+#include <dirent.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 // Constructor function for initializing the server.
 struct Server server_Constructor(int domain, int port, int service,
                                  int protocol, int backlog, u_long interface,
                                  void (*launch)(struct Server *server)) {
-  struct Server server; // Create a Server struct instance.
+  struct Server server;
 
-  // Assign server properties based on provided parameters.
   server.domain = domain;
-  server.service = service; // Basically mean how data is transferred via the
-                            // network tcp or udp
+  server.service = service;
   server.port = port;
   server.protocol = protocol;
   server.backlog = backlog;
+  server.routes = NULL; // Initialize routes tree
+  scan_directory(&server.routes, "templates", "");
+  server.address.sin_family = domain;
+  server.address.sin_port = htons(port);
+  server.address.sin_addr.s_addr = htonl(interface);
 
-  // Configure the server address structure.
-  server.address.sin_family = domain; // Address family (IPv4 or IPv6).
-  server.address.sin_port =
-      htons(port); // Convert port number to network byte order.
-  server.address.sin_addr.s_addr =
-      htonl(interface); // Convert IP address to network byte order.
-
-  // Create a socket with the given domain, service, and protocol.
   server.socket = socket(domain, service, protocol);
   if (server.socket < 0) {
-    perror(
-        "Failed to initialize/connect to socket...\n"); // Print error if socket
-                                                        // creation fails.
-    exit(EXIT_FAILURE); // Exit program if socket creation fails.
+    perror("Failed to initialize socket");
+    exit(EXIT_FAILURE);
   }
 
-  // Bind the socket to the specified IP and port.
   if (bind(server.socket, (struct sockaddr *)&server.address,
            sizeof(server.address)) < 0) {
-    perror("Failed to bind socket...\n"); // Print error if binding fails.
-    exit(EXIT_FAILURE);                   // Exit program if binding fails.
+    perror("Failed to bind socket");
+    exit(EXIT_FAILURE);
   }
 
-  // Start listening for incoming connections with a given backlog size.
-  if (listen(server.socket, server.backlog) < 0) {
-    perror("Failed to start listening...\n"); // Print error if listen fails.
-    exit(EXIT_FAILURE); // Exit program if listening fails.
+  if (listen(server.socket, backlog) < 0) {
+    perror("Failed to start listening");
+    exit(EXIT_FAILURE);
   }
 
-  server.launch = launch; // Assign the launch function pointer to the server.
-  return server;          // Return the constructed server instance.
+  server.launch = launch;
+  return server;
+}
+
+void scan_directory(struct Route **root, const char *base_path,
+                    const char *prefix) {
+  struct dirent *entry;
+  DIR *dir = opendir(base_path);
+  if (!dir) {
+    perror("Failed to open directory");
+    return;
+  }
+
+  while ((entry = readdir(dir)) != NULL) {
+    // Ignore hidden files (like .git, .DS_Store)
+    if (entry->d_name[0] == '.') {
+      continue;
+    }
+
+    char full_path[512];
+    snprintf(full_path, sizeof(full_path), "%s/%s", base_path, entry->d_name);
+
+    struct stat path_stat;
+    stat(full_path, &path_stat);
+
+    if (S_ISDIR(path_stat.st_mode)) {
+      // Recursively scan subdirectories
+      char new_prefix[512];
+      snprintf(new_prefix, sizeof(new_prefix), "%s/%s", prefix, entry->d_name);
+      scan_directory(root, full_path, new_prefix);
+    } else {
+      // Only add .html files to routes
+      if (strstr(entry->d_name, ".html") != NULL) {
+        // Construct route path (remove .html for clean URLs)
+        char route_path[512];
+        snprintf(route_path, sizeof(route_path), "%s/%s", prefix,
+                 entry->d_name);
+
+        // Remove ".html" for clean routes
+        route_path[strlen(route_path) - 5] = '\0';
+
+        // Special case: If the file is index.html, map "/" instead of "/index"
+        if (strcmp(route_path, "/index") == 0) {
+          strcpy(route_path, "/");
+        }
+
+        *root = addRoute(*root, route_path, full_path);
+        printf("Added Route: %s -> %s\n", route_path, full_path);
+      }
+    }
+  }
+
+  closedir(dir);
 }
 
 // Function to handle incoming connections and serve HTTP responses.
 void launch(struct Server *server) {
-  char buffer[BUFFER_SIZE]; // Buffer to store incoming data.
+  char buffer[BUFFER_SIZE];
 
-  while (1) { // Infinite loop to keep accepting client connections.
+  while (1) {
     printf("=== WAITING FOR CONNECTION === \n");
 
-    int addrlen =
-        sizeof(server->address); // Get the size of the address structure.
+    socklen_t addrlen = sizeof(server->address);
 
-    // Accept a new client connection.
-    int new_socket = accept(server->socket, (struct sockaddr *)&server->address,
-                            (socklen_t *)&addrlen);
-    // TODO: make a parser to parse incoming requests and make proper responses
-    // Read the incoming request into the buffer.
+    int new_socket =
+        accept(server->socket, (struct sockaddr *)&server->address, &addrlen);
+    if (new_socket < 0) {
+      perror("Failed to accept connection");
+      continue;
+    }
+
     ssize_t bytesRead = read(new_socket, buffer, BUFFER_SIZE - 1);
-    struct HttpRequest request;
-    if (bytesRead >= 0) {
-      buffer[bytesRead] = '\0'; // Null-terminate the received string.
-      request = parse_request(buffer);
-      printf("Method: %s\n", request.method);
-      printf("Path: %s\n", request.path);
-      printf("Headers:\n%s\n", request.headers);
-
-    } else {
-      perror("Error reading buffer...\n"); // Print error if reading fails.
+    if (bytesRead < 0) {
+      perror("Error reading buffer");
+      close(new_socket);
+      continue;
     }
 
-    // Define a basic HTTP response with an HTML message.
-    char *response;
-    if (strcmp(request.path, "/") == 0) {
-      response = "HTTP/1.1 200 OK\r\n"
-                 "Content-Type: text/html; charset=UTF-8\r\n\r\n"
-                 "<h1>Welcome to the Home Page</h1>";
-    } else if (strcmp(request.path, "/about") == 0) {
-      response = "HTTP/1.1 200 OK\r\n"
-                 "Content-Type: text/html; charset=UTF-8\r\n\r\n"
-                 "<h1>About Page</h1>";
-    } else {
-      response = "HTTP/1.1 404 Not Found\r\n";
-    }
-    // Send the response back to the client.
-    write(new_socket, response, strlen(response));
-    // TODO: making a system where the response is injected based on the request
+    buffer[bytesRead] = '\0';
 
-    // Close the client connection.
+    struct HttpRequest request = parse_request(buffer);
+    printf("Method: %s\n", request.method);
+    printf("Path: %s\n", request.path);
+    printf("Headers:\n%s\n", request.headers);
+    // Find requested file
+    // Lookup route
+    struct Route *destination = search(server->routes, request.path);
+    char *response_data = NULL;
+    char template[256] = "";
+    char *content_type = "text/html"; // Default content type
+
+    if (destination != NULL) {
+      snprintf(template, sizeof(template), "%s", destination->value);
+    } else {
+      snprintf(template, sizeof(template), "templates%.*s",
+               (int)(sizeof(template) - 10), request.path);
+    }
+
+    struct FileData fileData = read_file(template);
+    char http_header[4096];
+
+    if (fileData.size > 0) {
+      // Determine content type
+      content_type = get_mime_type(template);
+      // Send HTTP response header
+      snprintf(http_header, sizeof(http_header),
+               "HTTP/1.1 200 OK\r\n"
+               "Content-Type: %s\r\n"
+               "Content-Length: %zu\r\n"
+               "\r\n",
+               content_type, fileData.size);
+
+      send(new_socket, http_header, strlen(http_header), 0);
+      send(new_socket, fileData.data, fileData.size, 0); // Send file content
+      free(fileData.data);
+    } else {
+      // Send 404 response if file not found
+      snprintf(http_header, sizeof(http_header),
+               "HTTP/1.1 404 Not Found\r\n\r\n");
+      send(new_socket, http_header, strlen(http_header), 0);
+    }
     close(new_socket);
   }
+}
+
+char *get_mime_type(char *path) {
+  const char *dot = strrchr(path, '.'); // Get file extension
+  if (!dot)
+    return "application/octet-stream"; // Default binary data
+
+  if (strcmp(dot, ".html") == 0)
+    return "text/html";
+  if (strcmp(dot, ".css") == 0)
+    return "text/css";
+  if (strcmp(dot, ".js") == 0)
+    return "application/javascript";
+  if (strcmp(dot, ".png") == 0)
+    return "image/png";
+  if (strcmp(dot, ".jpg") == 0 || strcmp(dot, ".jpeg") == 0)
+    return "image/jpeg";
+  if (strcmp(dot, ".gif") == 0)
+    return "image/gif";
+  if (strcmp(dot, ".svg") == 0)
+    return "image/svg+xml";
+  if (strcmp(dot, ".json") == 0)
+    return "application/json";
+  if (strcmp(dot, ".ico") == 0)
+    return "image/x-icon";
+
+  return "application/octet-stream"; // Default for unknown types
 }
