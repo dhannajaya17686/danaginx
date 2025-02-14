@@ -24,7 +24,7 @@ git clone <repository-url>
 Make sure you have a C compiler (like gcc) installed. Then, compile the server:
 
 ```bash
-gcc -o http_server main.c server.c routes.c request.c response.c -pthread
+gcc -o danaginx  src/main.c src/request.c src/response.c src/routes.c src/server.c -Iinclude
 ```
 
 This will create an executable called `http_server`.
