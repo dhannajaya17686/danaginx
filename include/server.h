@@ -1,7 +1,7 @@
 #ifndef server_h
 #define server_h
 
-#include "../routes/routes.h"
+#include "routes.h"
 #include <netinet/in.h>
 
 #define BUFFER_SIZE 16000

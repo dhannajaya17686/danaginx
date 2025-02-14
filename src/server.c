@@ -1,7 +1,7 @@
-#include "server.h"
-#include "../request/request.h"
-#include "../response/response.h"
-#include "../routes/routes.h"
+#include "../include/server.h"
+#include "../include/request.h"
+#include "../include/response.h"
+#include "../include/routes.h"
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>

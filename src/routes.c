@@ -1,4 +1,4 @@
-#include "routes.h"
+#include "../include/routes.h"
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -69,5 +69,3 @@ void freeRoutes(struct Route *root) {
   free(root->value);
   free(root);
 }
-
-

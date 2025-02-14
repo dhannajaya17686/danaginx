@@ -1,4 +1,4 @@
-#include "server/server.h"
+#include "../include/server.h"
 #include <sys/socket.h>
 
 int main() {
